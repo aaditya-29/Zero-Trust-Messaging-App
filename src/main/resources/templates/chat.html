@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Secure Chat</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs/lib/stomp.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.js"></script> <!-- For AES -->
+</head>
+<body>
+    <h1>Welcome to Secure Chat</h1>
+
+    <div>
+        <label>Recipient Email:</label><input type="text" id="toUser">
+        <br/>
+        <label>Message:</label><input type="text" id="message">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <h2>Messages:</h2>
+    <ul id="messageList"></ul>
+
+    <script th:inline="javascript">
+        var stompClient = null;
+        var currentUserEmail = /*[[${email}]]*/ "";
+
+        function connect() {
+            var socket = new SockJS('/chat-websocket');
+            stompClient = Stomp.over(socket);
+            stompClient.connect({}, function (frame) {
+                console.log('Connected: ' + frame);
+                stompClient.subscribe('/topic/messages/' + currentUserEmail, function (messageOutput) {
+                    const message = JSON.parse(messageOutput.body);
+                    const listItem = document.createElement('li');
+                    listItem.textContent = "Encrypted Message Received: " + message.encryptedMessage;
+                    document.getElementById('messageList').appendChild(listItem);
+                });
+            });
+        }
+
+        function generateAESKey() {
+            return CryptoJS.lib.WordArray.random(16).toString(); // 128-bit AES key
+        }
+
+        function encryptAES(message, aesKey) {
+            return CryptoJS.AES.encrypt(message, aesKey).toString();
+        }
+
+        function sendMessage() {
+            const toUser = document.getElementById('toUser').value;
+            const messageText = document.getElementById('message').value;
+
+            // 1. Generate a random AES key
+            const aesKey = generateAESKey();
+
+            // 2. Encrypt the message with AES
+            const encryptedMessage = encryptAES(messageText, aesKey);
+
+            // 3. (TODO) Encrypt AES key with recipient's public key
+            // ➔ For now we will just send AES key in plaintext to make testing easier
+            // ➔ Later backend will handle public key encryption
+            const encryptedAESKey = aesKey; 
+
+            stompClient.send("/app/chat", {}, JSON.stringify({
+                from: currentUserEmail,
+                to: toUser,
+                content: encryptedMessage,
+                aesKeyEncryptedWithRSA: encryptedAESKey
+            }));
+
+            console.log("Message Sent!");
+        }
+
+        connect();
+    </script>
+</body>
+</html>
