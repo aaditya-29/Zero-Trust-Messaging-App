@@ -5,14 +5,17 @@
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/stompjs/lib/stomp.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.js"></script> <!-- For AES -->
+    <script src="https://cdn.jsdelivr.net/npm/jsencrypt@3.0.0-rc.1/bin/jsencrypt.min.js"></script> <!-- For RSA -->
 </head>
 <body>
     <h1>Welcome to Secure Chat</h1>
 
     <div>
-        <label>Recipient Email:</label><input type="text" id="toUser">
+        <label>Recipient Email:</label>
+        <input type="text" id="toUser">
         <br/>
-        <label>Message:</label><input type="text" id="message">
+        <label>Message:</label>
+        <input type="text" id="message">
         <button onclick="sendMessage()">Send</button>
     </div>
 
@@ -22,6 +25,7 @@
     <script th:inline="javascript">
         var stompClient = null;
         var currentUserEmail = /*[[${email}]]*/ "";
+        var privateKeyBase64 = /*[[${privateKey}]]*/ "";
 
         function connect() {
             var socket = new SockJS('/chat-websocket');
@@ -30,9 +34,7 @@
                 console.log('Connected: ' + frame);
                 stompClient.subscribe('/topic/messages/' + currentUserEmail, function (messageOutput) {
                     const message = JSON.parse(messageOutput.body);
-                    const listItem = document.createElement('li');
-                    listItem.textContent = "Encrypted Message Received: " + message.encryptedMessage;
-                    document.getElementById('messageList').appendChild(listItem);
+                    decryptAndDisplayMessage(message.encryptedMessage, message.encryptedAESKey);
                 });
             });
         }
@@ -45,32 +47,67 @@
             return CryptoJS.AES.encrypt(message, aesKey).toString();
         }
 
+        function decryptAES(encryptedText, aesKey) {
+            const bytes = CryptoJS.AES.decrypt(encryptedText, aesKey);
+            return bytes.toString(CryptoJS.enc.Utf8);
+        }
+
+        function encryptRSA(data, publicKey) {
+            var encrypt = new JSEncrypt();
+            encrypt.setPublicKey(publicKey);
+            return encrypt.encrypt(data);
+        }
+
+        function decryptRSA(encryptedData) {
+            var decrypt = new JSEncrypt();
+            decrypt.setPrivateKey(privateKeyBase64);
+            return decrypt.decrypt(encryptedData);
+        }
+
         function sendMessage() {
             const toUser = document.getElementById('toUser').value;
             const messageText = document.getElementById('message').value;
 
-            // 1. Generate a random AES key
             const aesKey = generateAESKey();
-
-            // 2. Encrypt the message with AES
             const encryptedMessage = encryptAES(messageText, aesKey);
 
-            // 3. (TODO) Encrypt AES key with recipient's public key
-            // ➔ For now we will just send AES key in plaintext to make testing easier
-            // ➔ Later backend will handle public key encryption
-            const encryptedAESKey = aesKey; 
+            fetch('/api/public-key?email=' + encodeURIComponent(toUser))
+                .then(response => response.text())
+                .then(publicKey => {
+                    const encryptedAESKey = encryptRSA(aesKey, publicKey);
 
-            stompClient.send("/app/chat", {}, JSON.stringify({
-                from: currentUserEmail,
-                to: toUser,
-                content: encryptedMessage,
-                aesKeyEncryptedWithRSA: encryptedAESKey
-            }));
+                    stompClient.send("/app/chat", {}, JSON.stringify({
+                        from: currentUserEmail,
+                        to: toUser,
+                        content: encryptedMessage,
+                        aesKeyEncryptedWithRSA: encryptedAESKey
+                    }));
 
-            console.log("Message Sent!");
+                    console.log("Message Sent!");
+                });
+        }
+
+        function decryptAndDisplayMessage(encryptedMessage, encryptedAESKey) {
+            const decryptedAESKey = decryptRSA(encryptedAESKey);
+            const originalMessage = decryptAES(encryptedMessage, decryptedAESKey);
+
+            const listItem = document.createElement('li');
+            listItem.textContent = "Message: " + originalMessage;
+            document.getElementById('messageList').appendChild(listItem);
+        }
+
+        function loadPreviousMessages() {
+            fetch('/api/messages?email=' + encodeURIComponent(currentUserEmail))
+                .then(response => response.json())
+                .then(messages => {
+                    messages.forEach(m => {
+                        decryptAndDisplayMessage(m.encryptedMessage, m.encryptedAESKey);
+                    });
+                });
         }
 
         connect();
+        loadPreviousMessages();
     </script>
 </body>
 </html>
