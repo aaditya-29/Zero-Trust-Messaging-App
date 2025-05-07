@@ -6,6 +6,12 @@ import java.security.*;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
+import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.SecretKey;
+import java.security.*;
+import java.security.spec.*;
+import javax.crypto.Cipher;
+import java.util.Base64;
 
 public class CryptoUtil {
 
@@ -53,4 +59,9 @@ public class CryptoUtil {
 		return keyFactory.generatePrivate(new PKCS8EncodedKeySpec(keyBytes));
 	}
 
+	// 🔥 New: Decode TOTP Secret Key for OTP validation
+	public static SecretKey getSecretKeyFromBase64(String base64Secret) throws Exception {
+		byte[] decodedKey = Base64.getDecoder().decode(base64Secret);
+		return new SecretKeySpec(decodedKey, "HmacSHA1");
+	}
 }

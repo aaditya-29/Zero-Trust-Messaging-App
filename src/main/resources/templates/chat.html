@@ -1,23 +1,53 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
+
 <head>
     <title>Secure Chat</title>
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/stompjs/lib/stomp.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.js"></script> <!-- For AES -->
-    <script src="https://cdn.jsdelivr.net/npm/jsencrypt@3.0.0-rc.1/bin/jsencrypt.min.js"></script> <!-- For RSA -->
+    <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsencrypt@3.0.0-rc.1/bin/jsencrypt.min.js"></script>
+    <style>
+        .online {
+            color: green;
+        }
+
+        .offline {
+            color: red;
+        }
+
+        .typing {
+            font-style: italic;
+            color: orange;
+        }
+
+        .message-status {
+            font-size: 0.8em;
+            margin-left: 10px;
+            color: gray;
+        }
+    </style>
 </head>
+
 <body>
     <h1>Welcome to Secure Chat</h1>
 
     <div>
         <label>Recipient Email:</label>
         <input type="text" id="toUser">
-        <br/>
+        <span id="userStatus"></span><br />
+
         <label>Message:</label>
-        <input type="text" id="message">
+        <input type="text" id="message" oninput="sendTypingStatus(true)" onblur="sendTypingStatus(false)"><br />
+
+        <label>
+            <input type="checkbox" id="sensitiveMode"> 🔥 Sensitive Mode
+        </label><br />
+
         <button onclick="sendMessage()">Send</button>
     </div>
+
+    <div id="typingIndicator" class="typing"></div>
 
     <h2>Messages:</h2>
     <ul id="messageList"></ul>
@@ -30,17 +60,37 @@
         function connect() {
             var socket = new SockJS('/chat-websocket');
             stompClient = Stomp.over(socket);
+
             stompClient.connect({}, function (frame) {
                 console.log('Connected: ' + frame);
+
                 stompClient.subscribe('/topic/messages/' + currentUserEmail, function (messageOutput) {
                     const message = JSON.parse(messageOutput.body);
-                    decryptAndDisplayMessage(message.encryptedMessage, message.encryptedAESKey);
+                    decryptAndDisplayMessage(message);
                 });
+
+                stompClient.subscribe('/topic/read-receipts/' + currentUserEmail, function (receipt) {
+                    const data = JSON.parse(receipt.body);
+                    markMessagesAsRead(data.receiver);
+                });
+
+                stompClient.subscribe('/topic/typing/' + currentUserEmail, function (typingInfo) {
+                    const data = JSON.parse(typingInfo.body);
+                    document.getElementById("typingIndicator").innerText = data.typing ? `${data.sender} is typing...` : "";
+                });
+
+                stompClient.subscribe('/topic/status/' + currentUserEmail, function (statusInfo) {
+                    const data = JSON.parse(statusInfo.body);
+                    document.getElementById("userStatus").innerHTML =
+                        (data.status === "ONLINE" ? "<span class='online'>Online</span>" : "<span class='offline'>Offline</span>");
+                });
+
+                sendStatus(true);
             });
         }
 
         function generateAESKey() {
-            return CryptoJS.lib.WordArray.random(16).toString(); // 128-bit AES key
+            return CryptoJS.lib.WordArray.random(32).toString();
         }
 
         function encryptAES(message, aesKey) {
@@ -65,8 +115,14 @@
         }
 
         function sendMessage() {
-            const toUser = document.getElementById('toUser').value;
-            const messageText = document.getElementById('message').value;
+            const toUser = document.getElementById('toUser').value.trim();
+            const messageText = document.getElementById('message').value.trim();
+            const sensitive = document.getElementById('sensitiveMode').checked;
+
+            if (!toUser || !messageText) {
+                alert("Recipient and message cannot be empty.");
+                return;
+            }
 
             const aesKey = generateAESKey();
             const encryptedMessage = encryptAES(messageText, aesKey);
@@ -80,34 +136,109 @@
                         from: currentUserEmail,
                         to: toUser,
                         content: encryptedMessage,
-                        aesKeyEncryptedWithRSA: encryptedAESKey
+                        aesKeyEncryptedWithRSA: encryptedAESKey,
+                        sensitive: sensitive
                     }));
 
-                    console.log("Message Sent!");
+                    const listItem = document.createElement('li');
+                    listItem.id = `sent-${Date.now()}`;
+                    listItem.textContent = `Me: ${messageText} ${sensitive ? '🔥' : ''}`;
+
+                    const statusSpan = document.createElement('span');
+                    statusSpan.className = 'message-status';
+                    statusSpan.textContent = 'Delivered ✅';
+
+                    listItem.appendChild(statusSpan);
+                    document.getElementById('messageList').appendChild(listItem);
+
+                    document.getElementById('message').value = "";
                 });
         }
 
-        function decryptAndDisplayMessage(encryptedMessage, encryptedAESKey) {
-            const decryptedAESKey = decryptRSA(encryptedAESKey);
-            const originalMessage = decryptAES(encryptedMessage, decryptedAESKey);
+        function decryptAndDisplayMessage(message) {
+            const decryptedAESKey = decryptRSA(message.encryptedAESKey);
+            const originalMessage = decryptAES(message.encryptedMessage, decryptedAESKey);
 
             const listItem = document.createElement('li');
-            listItem.textContent = "Message: " + originalMessage;
+            listItem.id = "msg-" + message.id;
+
+            let display = `${message.sender}: ${originalMessage} ${message.sensitive ? '🔥' : ''}`;
+
+            const statusSpan = document.createElement('span');
+            statusSpan.className = 'message-status';
+
+            if (message.expired === true) {
+                statusSpan.textContent = ' [Expired]';
+            } else if (message.status === "READ") {
+                statusSpan.textContent = ' ✅✅ (Read)';
+            } else {
+                statusSpan.textContent = ' ✅ (Delivered)';
+            }
+
+            listItem.textContent = display;
+            listItem.appendChild(statusSpan);
             document.getElementById('messageList').appendChild(listItem);
         }
 
+        function markMessagesAsRead(receiverEmail) {
+            const allMessages = document.querySelectorAll('li');
+            allMessages.forEach(li => {
+                if (li.innerText.includes(receiverEmail)) {
+                    const statusSpan = li.querySelector('.message-status');
+                    if (statusSpan) {
+                        statusSpan.textContent = ' ✅✅ (Read)';
+                    }
+                }
+            });
+        }
+
         function loadPreviousMessages() {
+            const list = document.getElementById('messageList');
+            list.innerHTML = "";
+
             fetch('/api/messages?email=' + encodeURIComponent(currentUserEmail))
                 .then(response => response.json())
                 .then(messages => {
-                    messages.forEach(m => {
-                        decryptAndDisplayMessage(m.encryptedMessage, m.encryptedAESKey);
-                    });
+                    if (messages.length === 0) {
+                        const listItem = document.createElement('li');
+                        listItem.textContent = "No new messages.";
+                        list.appendChild(listItem);
+                    } else {
+                        messages.forEach(m => {
+                            decryptAndDisplayMessage(m);
+                        });
+                    }
+                })
+                .catch(err => {
+                    console.error("Failed to fetch messages:", err);
                 });
         }
+
+        function sendTypingStatus(isTyping) {
+            const toUser = document.getElementById('toUser').value;
+            if (toUser) {
+                stompClient.send("/app/typing", {}, JSON.stringify({
+                    sender: currentUserEmail,
+                    receiver: toUser,
+                    typing: isTyping
+                }));
+            }
+        }
+
+        function sendStatus(isOnline) {
+            stompClient.send("/app/status", {}, JSON.stringify({
+                userId: currentUserEmail,
+                status: isOnline ? "ONLINE" : "OFFLINE"
+            }));
+        }
+
+        window.onbeforeunload = function () {
+            sendStatus(false);
+        };
 
         connect();
         loadPreviousMessages();
     </script>
 </body>
+
 </html>

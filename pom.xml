@@ -63,6 +63,18 @@
             <version>1.70</version>
         </dependency>
 
+		<dependency>
+		    <groupId>org.jboss.aerogear</groupId>
+		    <artifactId>aerogear-otp-java</artifactId>
+		    <version>1.0.0</version>
+		</dependency>
+
+		<dependency>
+		    <groupId>com.eatthepath</groupId>
+		    <artifactId>java-otp</artifactId>
+		    <version>0.4.0</version>
+		</dependency>
+
 
         <!-- Lombok (Optional, for @Data, @Builder etc.) -->
         <dependency>

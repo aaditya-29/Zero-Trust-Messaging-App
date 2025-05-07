@@ -22,7 +22,19 @@ public class User implements UserDetails {
 	private String privateKey;
 	private String verificationCode;
 
-	public User() {
+	// 🔥 New field for TOTP MFA
+	private String totpSecret;
+
+	// --- getters and setters ---
+
+	// Important: You must also add getTotpSecret() and setTotpSecret()
+
+	public String getTotpSecret() {
+		return totpSecret;
+	}
+
+	public void setTotpSecret(String totpSecret) {
+		this.totpSecret = totpSecret;
 	}
 
 	// ===== Getters and Setters =====
@@ -99,6 +111,12 @@ public class User implements UserDetails {
 		return Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"));
 	}
 
+//	// implement UserDetails methods properly
+//	@Override
+//	public Collection<? extends GrantedAuthority> getAuthorities() {
+//		return null;
+//	}
+
 	@Override
 	public String getUsername() {
 		return email;
@@ -123,4 +141,5 @@ public class User implements UserDetails {
 	public boolean isEnabled() {
 		return verified;
 	}
+
 }
