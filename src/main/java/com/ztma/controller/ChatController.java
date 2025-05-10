@@ -3,6 +3,8 @@ package com.ztma.controller;
 import com.ztma.model.*;
 import com.ztma.repository.*;
 import com.ztma.service.ChatService;
+import com.ztma.service.EmailService;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.*;
@@ -12,6 +14,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 @Controller
@@ -28,6 +31,15 @@ public class ChatController {
 
     @Autowired
     private UserRepository userRepo;
+
+    @Autowired
+    private MessageLogRepository messageLogRepository;
+
+    @Autowired
+    private EmailService emailService;
+    
+    @Autowired
+    private UserActivityLogRepository userActivityLogRepository;
 
     @GetMapping("/chat")
     public String chatPage(@RequestParam(value = "email", required = false) String email, Model model) {
@@ -58,24 +70,33 @@ public class ChatController {
 
         SecureMessage savedMessage = messageRepo.save(secureMessage);
 
+        // Log basic message metrics
+        MessageLog msgLog = new MessageLog();
+        msgLog.setSender(message.getFrom());
+        msgLog.setTimestamp(System.currentTimeMillis());
+        msgLog.setSize(message.getContent().length());
+        messageLogRepository.save(msgLog);
+
+        // ✏️ Log user activity for Admin Dashboard
+        UserActivityLog activity = new UserActivityLog();
+        activity.setUserEmail(message.getFrom());
+        activity.setActionType("MESSAGE_SENT");
+        activity.setTimestamp(new Date());
+        userActivityLogRepository.save(activity);
+
+        // 📣 Detect spam-like behavior (> 10 messages in 60s)
+        long cutoff = System.currentTimeMillis() - 60_000;
+        List<MessageLog> recent = messageLogRepository.findBySenderAndTimestampAfter(message.getFrom(), cutoff);
+        if (recent.size() > 10) {
+            emailService.sendSimpleMessage(message.getFrom(), "Unusual Activity Detected",
+                    "You have sent a high number of messages in a short time. If this wasn't you, please secure your account.");
+
+            System.out.println("Unusual Activity Detected for " + message.getFrom());
+        }
+
         messagingTemplate.convertAndSend("/topic/messages/" + message.getTo(), savedMessage);
     }
 
-    @MessageMapping("/read")
-    public void markAsRead(ReadReceipt receipt) {
-        List<SecureMessage> messages = messageRepo.findBySenderAndReceiver(receipt.getSender(), receipt.getReceiver());
-        messages.forEach(msg -> {
-            msg.setStatus("READ");
-        });
-        messageRepo.saveAll(messages);
-
-        messagingTemplate.convertAndSend("/topic/read-receipts/" + receipt.getSender(), receipt);
-    }
-
-    @MessageMapping("/typing")
-    public void typingIndicator(TypingIndicator indicator) {
-        messagingTemplate.convertAndSend("/topic/typing/" + indicator.getReceiver(), indicator);
-    }
 
     @MessageMapping("/status")
     public void userStatus(UserStatus status) {
@@ -86,7 +107,6 @@ public class ChatController {
     public ResponseEntity<List<SecureMessage>> getMessages(@RequestParam String email) {
         long now = System.currentTimeMillis();
         long expiration = 10 * 60 * 1000;
-        System.out.println("Controller hit first ");
 
         List<SecureMessage> messages = messageRepo.findByReceiver(email);
         List<SecureMessage> result = new ArrayList<>();
@@ -107,7 +127,6 @@ public class ChatController {
             messageRepo.save(msg);
             result.add(msg);
         }
-        System.out.println("Controller hit after");
 
         return ResponseEntity.ok(result);
     }

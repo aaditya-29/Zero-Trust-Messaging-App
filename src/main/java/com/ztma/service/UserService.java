@@ -42,16 +42,14 @@ public class UserService {
         String code = UUID.randomUUID().toString().substring(0, 6);
         user.setVerificationCode(code);
 
-        // Generate TOTP secret for MFA (Google Authenticator)
         String totpSecret = OtpUtil.generateSecret();
-        user.setTotpSecret(totpSecret);
 
         // Save the user data to the repository
         userRepo.save(user);
 
         // Log the verification code (can be sent to the user via email)
         System.out.println("Registration verification code is: " + code);
-        // emailService.sendVerificationEmail(user.getEmail(), code);  // Uncomment to send verification email
+         emailService.sendVerificationEmail(user.getEmail(), code);  // Uncomment to send verification email
     }
 
     // Verify the code entered during registration
@@ -61,7 +59,7 @@ public class UserService {
             User user = userOpt.get();
             if (code.equals(user.getVerificationCode())) {
                 user.setVerified(true);
-                user.setVerificationCode(null);  // Clear the verification code
+                user.setVerificationCode(null);  
                 userRepo.save(user);
                 return true;
             }
@@ -84,14 +82,9 @@ public class UserService {
         return UUID.randomUUID().toString().substring(0, 6);  // Random 6-digit OTP
     }
 
-    // Validate OTP entered during login
-    public boolean validateOtp(String email, String otp) throws Exception {
-        User user = loadUserByEmail(email);
-        return OtpUtil.verifyCode(user.getTotpSecret(), otp);
-    }
+	public void saveUser(User user) {
+        userRepo.save(user);
+		
+	}
 
-    // Validate OTP for TOTP (Google Authenticator)
-    public boolean validateTotpOtp(String otp, String totpSecret) throws Exception {
-        return OtpUtil.verifyCode(totpSecret, otp);
-    }
 }

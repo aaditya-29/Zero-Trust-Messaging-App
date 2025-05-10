@@ -1,13 +1,19 @@
 package com.ztma.model;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+
+import jakarta.persistence.ElementCollection;
 
 @Document
 public class User implements UserDetails {
@@ -21,23 +27,30 @@ public class User implements UserDetails {
 	private String publicKey;
 	private String privateKey;
 	private String verificationCode;
+	@ElementCollection
+	private List<String> knownDevices = new ArrayList<>();
 
-	// 🔥 New field for TOTP MFA
-	private String totpSecret;
-
-	// --- getters and setters ---
-
-	// Important: You must also add getTotpSecret() and setTotpSecret()
-
-	public String getTotpSecret() {
-		return totpSecret;
-	}
-
-	public void setTotpSecret(String totpSecret) {
-		this.totpSecret = totpSecret;
-	}
+	@ElementCollection
+	private Set<String> knownIps = new HashSet<>();
 
 	// ===== Getters and Setters =====
+
+	public List<String> getKnownDevices() {
+		return knownDevices;
+	}
+
+	public void setKnownDevices(List<String> knownDevices) {
+		this.knownDevices = knownDevices;
+	}
+
+	
+	public Set<String> getKnownIps() {
+		return knownIps;
+	}
+
+	public void setKnownIps(Set<String> knownIps) {
+		this.knownIps = knownIps;
+	}
 
 	public String getId() {
 		return id;

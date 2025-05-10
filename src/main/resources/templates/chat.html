@@ -1,12 +1,14 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html lang="en">
 
 <head>
+    <meta charset="UTF-8">
     <title>Secure Chat</title>
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/stompjs/lib/stomp.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsencrypt@3.0.0-rc.1/bin/jsencrypt.min.js"></script>
+    <script src="https://openfpcdn.io/fingerprintjs/v4"></script>
     <style>
         .online {
             color: green;
@@ -35,16 +37,16 @@
     <div>
         <label>Recipient Email:</label>
         <input type="text" id="toUser">
-        <span id="userStatus"></span><br />
+        <span id="userStatus"></span><br>
 
         <label>Message:</label>
-        <input type="text" id="message" oninput="sendTypingStatus(true)" onblur="sendTypingStatus(false)"><br />
+        <input type="text" id="message" oninput="sendTypingStatus(true)" onblur="sendTypingStatus(false)"><br>
 
         <label>
             <input type="checkbox" id="sensitiveMode"> 🔥 Sensitive Mode
-        </label><br />
+        </label><br>
 
-        <button onclick="sendMessage()">Send</button>
+        <button id="sendBtn">Send</button>
     </div>
 
     <div id="typingIndicator" class="typing"></div>
@@ -53,36 +55,40 @@
     <ul id="messageList"></ul>
 
     <script th:inline="javascript">
-        var stompClient = null;
-        var currentUserEmail = /*[[${email}]]*/ "";
-        var privateKeyBase64 = /*[[${privateKey}]]*/ "";
+        let stompClient = null;
+        const currentUserEmail = /*[[${email}]]*/ "";
+        const privateKeyBase64 = /*[[${privateKey}]]*/ "";
+
+        document.getElementById('sendBtn').addEventListener('click', sendMessage);
 
         function connect() {
-            var socket = new SockJS('/chat-websocket');
+            const socket = new SockJS('/chat-websocket');
             stompClient = Stomp.over(socket);
 
-            stompClient.connect({}, function (frame) {
+            stompClient.connect({}, frame => {
                 console.log('Connected: ' + frame);
 
-                stompClient.subscribe('/topic/messages/' + currentUserEmail, function (messageOutput) {
+                stompClient.subscribe(`/topic/messages/${currentUserEmail}`, messageOutput => {
                     const message = JSON.parse(messageOutput.body);
                     decryptAndDisplayMessage(message);
                 });
 
-                stompClient.subscribe('/topic/read-receipts/' + currentUserEmail, function (receipt) {
+                stompClient.subscribe(`/topic/read-receipts/${currentUserEmail}`, receipt => {
                     const data = JSON.parse(receipt.body);
                     markMessagesAsRead(data.receiver);
                 });
 
-                stompClient.subscribe('/topic/typing/' + currentUserEmail, function (typingInfo) {
+                stompClient.subscribe(`/topic/typing/${currentUserEmail}`, typingInfo => {
                     const data = JSON.parse(typingInfo.body);
                     document.getElementById("typingIndicator").innerText = data.typing ? `${data.sender} is typing...` : "";
                 });
 
-                stompClient.subscribe('/topic/status/' + currentUserEmail, function (statusInfo) {
+                stompClient.subscribe(`/topic/status/${currentUserEmail}`, statusInfo => {
                     const data = JSON.parse(statusInfo.body);
                     document.getElementById("userStatus").innerHTML =
-                        (data.status === "ONLINE" ? "<span class='online'>Online</span>" : "<span class='offline'>Offline</span>");
+                        data.status === "ONLINE"
+                            ? "<span class='online'>Online</span>"
+                            : "<span class='offline'>Offline</span>";
                 });
 
                 sendStatus(true);
@@ -103,15 +109,15 @@
         }
 
         function encryptRSA(data, publicKey) {
-            var encrypt = new JSEncrypt();
-            encrypt.setPublicKey(publicKey);
-            return encrypt.encrypt(data);
+            const encryptor = new JSEncrypt();
+            encryptor.setPublicKey(publicKey);
+            return encryptor.encrypt(data);
         }
 
         function decryptRSA(encryptedData) {
-            var decrypt = new JSEncrypt();
-            decrypt.setPrivateKey(privateKeyBase64);
-            return decrypt.decrypt(encryptedData);
+            const decryptor = new JSEncrypt();
+            decryptor.setPrivateKey(privateKeyBase64);
+            return decryptor.decrypt(encryptedData);
         }
 
         function sendMessage() {
@@ -127,7 +133,7 @@
             const aesKey = generateAESKey();
             const encryptedMessage = encryptAES(messageText, aesKey);
 
-            fetch('/api/public-key?email=' + encodeURIComponent(toUser))
+            fetch(`/api/public-key?email=${encodeURIComponent(toUser)}`)
                 .then(response => response.text())
                 .then(publicKey => {
                     const encryptedAESKey = encryptRSA(aesKey, publicKey);
@@ -160,9 +166,9 @@
             const originalMessage = decryptAES(message.encryptedMessage, decryptedAESKey);
 
             const listItem = document.createElement('li');
-            listItem.id = "msg-" + message.id;
+            listItem.id = `msg-${message.id}`;
 
-            let display = `${message.sender}: ${originalMessage} ${message.sensitive ? '🔥' : ''}`;
+            const displayText = `${message.sender}: ${originalMessage} ${message.sensitive ? '🔥' : ''}`;
 
             const statusSpan = document.createElement('span');
             statusSpan.className = 'message-status';
@@ -175,14 +181,13 @@
                 statusSpan.textContent = ' ✅ (Delivered)';
             }
 
-            listItem.textContent = display;
+            listItem.textContent = displayText;
             listItem.appendChild(statusSpan);
             document.getElementById('messageList').appendChild(listItem);
         }
 
         function markMessagesAsRead(receiverEmail) {
-            const allMessages = document.querySelectorAll('li');
-            allMessages.forEach(li => {
+            document.querySelectorAll('li').forEach(li => {
                 if (li.innerText.includes(receiverEmail)) {
                     const statusSpan = li.querySelector('.message-status');
                     if (statusSpan) {
@@ -196,7 +201,7 @@
             const list = document.getElementById('messageList');
             list.innerHTML = "";
 
-            fetch('/api/messages?email=' + encodeURIComponent(currentUserEmail))
+            fetch(`/api/messages?email=${encodeURIComponent(currentUserEmail)}`)
                 .then(response => response.json())
                 .then(messages => {
                     if (messages.length === 0) {
@@ -204,9 +209,7 @@
                         listItem.textContent = "No new messages.";
                         list.appendChild(listItem);
                     } else {
-                        messages.forEach(m => {
-                            decryptAndDisplayMessage(m);
-                        });
+                        messages.forEach(m => decryptAndDisplayMessage(m));
                     }
                 })
                 .catch(err => {
@@ -232,12 +235,30 @@
             }));
         }
 
-        window.onbeforeunload = function () {
+        window.addEventListener('beforeunload', () => {
             sendStatus(false);
-        };
+        });
 
         connect();
         loadPreviousMessages();
+    </script>
+
+    <script>
+        FingerprintJS.load().then(fp => {
+            fp.get().then(result => {
+                const visitorId = result.visitorId;
+                sessionStorage.setItem('deviceId', visitorId);
+
+                const emailInput = document.getElementById("toUser");
+                if (emailInput) {
+                    fetch('/api/device-fingerprint', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: emailInput.value, deviceId: visitorId })
+                    });
+                }
+            });
+        });
     </script>
 </body>
 

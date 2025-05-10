@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Security Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <h1 class="text-3xl font-bold text-center mb-8">Admin Security Dashboard</h1>
+
+    <!-- Trusted Devices Table -->
+    <div class="mb-12">
+        <h2 class="text-xl font-semibold mb-4">Trusted Devices</h2>
+        <div class="overflow-x-auto bg-white shadow rounded-lg">
+            <table class="min-w-full table-auto text-sm text-left">
+                <thead class="bg-gray-200 text-gray-700 uppercase">
+                    <tr>
+                        <th class="px-4 py-2">Email</th>
+                        <th class="px-4 py-2">IP Address</th>
+                        <th class="px-4 py-2">User Agent</th>
+                        <th class="px-4 py-2">Last Login</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="device : ${devices}" class="border-b hover:bg-gray-50">
+                        <td class="px-4 py-2" th:text="${device.userEmail}"></td>
+                        <td class="px-4 py-2" th:text="${device.ipAddress}"></td>
+                        <td class="px-4 py-2" th:text="${device.userAgent}"></td>
+                        <td class="px-4 py-2" th:text="${#dates.format(device.lastLoginTime, 'yyyy-MM-dd HH:mm')}"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Recent Activity Logs -->
+    <div>
+        <h2 class="text-xl font-semibold mb-4">User Activity Logs</h2>
+        <div class="overflow-x-auto bg-white shadow rounded-lg">
+            <table class="min-w-full table-auto text-sm text-left">
+                <thead class="bg-gray-200 text-gray-700 uppercase">
+                    <tr>
+                        <th class="px-4 py-2">Email</th>
+                        <th class="px-4 py-2">Action</th>
+                        <th class="px-4 py-2">Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="log : ${activities}" class="border-b hover:bg-gray-50">
+                        <td class="px-4 py-2" th:text="${log.userEmail}"></td>
+                        <td class="px-4 py-2" th:text="${log.actionType}"></td>
+                        <td class="px-4 py-2" th:text="${#dates.format(log.timestamp, 'yyyy-MM-dd HH:mm')}"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</body>
+</html>

@@ -15,9 +15,9 @@ public class SecureMessage {
     private String encryptedMessage;
     private String encryptedAESKey;
     private long timestamp;
-    private String status; // NEW FIELD: DELIVERED or READ
-    private boolean read = false; // NEW FIELD (default = false)
-    private boolean sensitive; // NEW FIELD for sensitive mode (default = false)
+    private String status; // DELIVERED or READ
+    private boolean read = false; //  (default = false)
+    private boolean sensitive; // sensitive mode (default = false)
     private long expirationTime; // Milliseconds
 
     // Getters and Setters
@@ -107,6 +107,5 @@ public class SecureMessage {
     }
 
     public void setExpired(boolean expired) {
-        // This could be a method if you want to do more than just check expiration
     }
 }

@@ -24,18 +24,11 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http.csrf().disable()
-            .authorizeHttpRequests()
-            .requestMatchers("/register", "/verify", "/verify-email", "/login", "/css/**",
-                "/js/**", "/webjars/**", "/chat-websocket/**", "/process-login", "/verify-otp", "/process-login-otp")
-            .permitAll()
-            .anyRequest()
-            .authenticated()
-            .and()
-            .formLogin()
-            .disable()
-            .sessionManagement()
-            .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED); // ✅ Use session if needed
+        http.csrf().disable().authorizeHttpRequests()
+                .requestMatchers("/", "/register", "/verify", "/verify-email", "/login", "/css/**", "/js/**",
+                        "/webjars/**", "/chat-websocket/**", "/process-login", "/verify-otp", "/process-login-otp")
+                .permitAll().anyRequest().authenticated().and().formLogin().disable().sessionManagement()
+                .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED); // ✅ Use session if needed
 
         return http.build();
     }
@@ -52,4 +45,12 @@ public class SecurityConfig {
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
+
+    protected void configure(HttpSecurity http) throws Exception {
+        http.sessionManagement().invalidSessionUrl("/login?expired=true").maximumSessions(1)
+                .expiredUrl("/login?session=expired");
+
+        http.rememberMe().key("ZTMA_SecureKey").tokenValiditySeconds(900); // 15 min session
+    }
+
 }

@@ -17,7 +17,7 @@ public class EmailService {
         msg.setTo(to);
         msg.setSubject("ZTMA Email Verification Code");
         msg.setText("Your verification code is: " + code);
-        mailSender.send(msg);
+//        mailSender.send(msg);
         System.out.println("Verification email sent to " + to + " with code: " + code);  // Added logging
     }
 

@@ -24,6 +24,6 @@ public class CustomUserDetailsService implements UserDetailsService {
             throw new UsernameNotFoundException("Email not verified.");
         }
 
-        return user; // <<<<<<==== Important: Return your own User object directly
+        return user;
     }
 }

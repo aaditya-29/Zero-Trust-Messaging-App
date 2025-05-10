@@ -15,10 +15,10 @@ public class ChatMessageService {
     @Autowired
     private UserRepository userRepo;
 
-    public String decryptMessage(SecureMessage message, String userEmail) throws Exception {
-        User user = userRepo.findByEmail(userEmail).orElseThrow();
-        PrivateKey privateKey = CryptoUtil.getPrivateKeyFromBase64(user.getPrivateKey());
-        String aesKey = CryptoUtil.decryptRSA(message.getEncryptedAESKey(), privateKey);
-        return CryptoUtil.decryptAES(message.getEncryptedMessage(), aesKey);
-    }
+//    public String decryptMessage(SecureMessage message, String userEmail) throws Exception {
+//        User user = userRepo.findByEmail(userEmail).orElseThrow();
+//        PrivateKey privateKey = CryptoUtil.getPrivateKeyFromBase64(user.getPrivateKey());
+//        String aesKey = CryptoUtil.decryptRSA(message.getEncryptedAESKey(), privateKey);
+//        return CryptoUtil.decryptAES(message.getEncryptedMessage(), aesKey);
+//    }
 }
