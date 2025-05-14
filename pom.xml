@@ -9,7 +9,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>3.4.4</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <relativePath/>
     </parent>
 
     <groupId>com.ztma</groupId>
@@ -49,7 +49,20 @@
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
-        <!-- JWT for authentication (manually managed version) -->
+        <!-- Jakarta Persistence API (replaces javax.persistence in Spring Boot 3.x) -->
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+            <version>3.1.0</version>
+        </dependency>
+
+        <!-- (Optional) Jakarta Bean Validation API -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- JWT -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt</artifactId>
@@ -63,21 +76,19 @@
             <version>1.70</version>
         </dependency>
 
-		<dependency>
-		    <groupId>org.jboss.aerogear</groupId>
-		    <artifactId>aerogear-otp-java</artifactId>
-		    <version>1.0.0</version>
-		</dependency>
+        <!-- TOTP Libraries -->
+        <dependency>
+            <groupId>org.jboss.aerogear</groupId>
+            <artifactId>aerogear-otp-java</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.eatthepath</groupId>
+            <artifactId>java-otp</artifactId>
+            <version>0.4.0</version>
+        </dependency>
 
-		<dependency>
-		    <groupId>com.eatthepath</groupId>
-		    <artifactId>java-otp</artifactId>
-		    <version>0.4.0</version>
-		</dependency>
-	
-
-
-
+        <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
