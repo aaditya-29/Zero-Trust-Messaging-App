@@ -19,8 +19,26 @@ public class SecureMessage {
     private boolean read = false; //  (default = false)
     private boolean sensitive; // sensitive mode (default = false)
     private long expirationTime; // Milliseconds
+    private String signature;  // Add this field to the DTO
+    private String ephemeralPublicKey; // For FS
 
-    // Getters and Setters
+    public String getSignature() {
+		return signature;
+	}
+
+	public void setSignature(String signature) {
+		this.signature = signature;
+	}
+
+	public String getEphemeralPublicKey() {
+		return ephemeralPublicKey;
+	}
+
+	public void setEphemeralPublicKey(String ephemeralPublicKey) {
+		this.ephemeralPublicKey = ephemeralPublicKey;
+	}
+
+	// Getters and Setters
     public String getId() {
         return id;
     }

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -21,12 +22,24 @@ public class User implements UserDetails {
 	@Id
 	private String id;
 	private String name;
+
+	@Indexed(unique = true)
 	private String email;
 	private String password;
 	private boolean verified;
 	private String publicKey;
 	private String privateKey;
 	private String verificationCode;
+	private String x25519PublicKey;
+
+	public String getX25519PublicKey() {
+		return x25519PublicKey;
+	}
+
+	public void setX25519PublicKey(String x25519PublicKey) {
+		this.x25519PublicKey = x25519PublicKey;
+	}
+
 	@ElementCollection
 	private List<String> knownDevices = new ArrayList<>();
 
@@ -43,7 +56,6 @@ public class User implements UserDetails {
 		this.knownDevices = knownDevices;
 	}
 
-	
 	public Set<String> getKnownIps() {
 		return knownIps;
 	}

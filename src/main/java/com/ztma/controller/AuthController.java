@@ -22,6 +22,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.util.*;
+
 @Controller
 public class AuthController {
 
@@ -98,6 +99,18 @@ public class AuthController {
 		return "login";
 	}
 
+	@PostMapping("/logout")
+	@ResponseBody
+	public ResponseEntity<String> handleLogout(HttpServletRequest request, HttpServletResponse response) {
+		try {
+			request.getSession().invalidate();
+			SecurityContextHolder.clearContext();
+			return ResponseEntity.ok("Logged out successfully.");
+		} catch (Exception e) {
+			return ResponseEntity.status(500).body("Failed to log out. Please try again.");
+		}
+	}
+
 	// --------------- Process Login ---------------
 	@PostMapping("/process-login")
 	public String processLogin(@RequestParam String email, @RequestParam String password, Model model) {
@@ -109,7 +122,16 @@ public class AuthController {
 				loginOtps.put(email, otp);
 
 				System.out.println("Login OTP: " + otp);
-				emailService.sendSimpleMessage(email, "Your Login OTP", "Your OTP is: " + otp);
+				emailService.sendSimpleMessage(
+					    email,
+					    "🔐 Your One-Time Password (OTP)",
+					    "Hello,\n\n" +
+					    "Your login OTP is: " + otp + "\n\n" +
+					    "This OTP is valid for the next 5 minutes and can be used only once.\n" +
+					    "If you did not request this, please ignore this message or secure your account.\n\n" +
+					    "Stay safe,\n" +
+					    "Your SecureChat Team"
+					);
 
 				return "redirect:/verify-otp?email=" + email;
 			} else {
@@ -157,6 +179,7 @@ public class AuthController {
 
 				// Get IP & User-Agent
 				String ip = request.getRemoteAddr();
+
 				String userAgent = request.getHeader("User-Agent");
 
 				// 💾 Store in TrustedDevice (if not already trusted)
@@ -170,8 +193,21 @@ public class AuthController {
 					device.setLastLoginTime(new Date());
 					trustedDeviceRepository.save(device);
 
-					emailService.sendSimpleMessage(email, "New Device Login",
-							"We noticed a login from a new IP address: " + ip + "\nUser Agent: " + userAgent);
+					emailService.sendSimpleMessage(
+						    email,
+						    "⚠️ New Device Login Detected",
+						    "Hello,\n\n" +
+						    "We've detected a login to your account from a new device or location.\n\n" +
+						    "📍 **IP Address**: " + ip + "\n" +
+						    "🖥️ **Device Info**: " + userAgent + "\n\n" +
+						    "If this was you, no action is needed.\n" +
+						    "If you don't recognize this activity, we recommend you:\n" +
+						    "- Change your password immediately\n" +
+						    "- Review your recent activity\n\n" +
+						    "Stay safe,\n" +
+						    "Your SecureChat Team"
+						);
+
 				}
 
 				UserActivityLog loginLog = new UserActivityLog();
@@ -230,8 +266,21 @@ public class AuthController {
 			knownIps.add(ipAddress);
 			user.setKnownIps(knownIps);
 			newIp = true;
-			emailService.sendSimpleMessage(email, "⚠️ New IP Address Detected",
-					"We detected login from a new IP: " + ipAddress);
+			String body = "<html><body>" +
+				    "<p>Hello,</p>" +
+				    "<p>We noticed a login to your account from a <strong>new IP address</strong>:</p>" +
+				    "<p><code>" + ipAddress + "</code></p>" +
+				    "<p>If this was you, no action is needed.</p>" +
+				    "<p>If you don't recognize this login, we recommend:</p>" +
+				    "<ul>" +
+				    "<li>Changing your password immediately</li>" +
+				    "<li>Reviewing your recent account activity</li>" +
+				    "</ul>" +
+				    "<p>Stay secure,<br>Your SecureChat Team</p>" +
+				    "</body></html>";
+
+				emailService.sendSimpleMessage(email, "⚠️ New IP Address Detected", body);
+
 		}
 
 		userService.saveUser(user);

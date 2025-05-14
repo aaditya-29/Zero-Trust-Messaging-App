@@ -10,6 +10,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import com.ztma.service.CustomUserDetailsService;
@@ -24,11 +25,24 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http.csrf().disable().authorizeHttpRequests()
-                .requestMatchers("/", "/register", "/verify", "/verify-email", "/login", "/css/**", "/js/**",
-                        "/webjars/**", "/chat-websocket/**", "/process-login", "/verify-otp", "/process-login-otp")
-                .permitAll().anyRequest().authenticated().and().formLogin().disable().sessionManagement()
-                .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED); // ✅ Use session if needed
+        http.csrf().disable()
+            .authorizeHttpRequests(authz -> authz
+                .requestMatchers("/", "/register", "/verify", "/verify-email", "/login", "/logout",
+                                 "/css/**", "/js/**", "/webjars/**", "/chat-websocket/**",
+                                 "/process-login", "/verify-otp", "/process-login-otp")
+                .permitAll()
+                .anyRequest().authenticated()
+            )
+            .exceptionHandling()
+                .authenticationEntryPoint(new LoginUrlAuthenticationEntryPoint("/login")) // ⬅️ Redirect if unauthorized
+            .and()
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
+                .invalidSessionUrl("/login?expired=true") // ⬅️ Redirect on session invalid
+            )
+            .rememberMe()
+                .key("ZTMA_SecureKey")
+                .tokenValiditySeconds(900); // 15 minutes
 
         return http.build();
     }

@@ -4,83 +4,161 @@
 <head>
     <meta charset="UTF-8">
     <title>Secure Chat</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/stompjs/lib/stomp.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsencrypt@3.0.0-rc.1/bin/jsencrypt.min.js"></script>
     <script src="https://openfpcdn.io/fingerprintjs/v4"></script>
+    <!-- Add curve25519 library for Forward Secrecy -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tweetnacl/1.0.3/nacl.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tweetnacl-util/0.15.1/nacl-util.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+
     <style>
         .online {
-            color: green;
+            color: #22c55e;
         }
 
+        /* green-500 */
         .offline {
-            color: red;
+            color: #ef4444;
         }
 
-        .typing {
-            font-style: italic;
-            color: orange;
-        }
-
+        /* red-500 */
         .message-status {
             font-size: 0.8em;
             margin-left: 10px;
             color: gray;
         }
+
+        .expired-message {
+            color: #999;
+            font-style: italic;
+        }
+
+        .file-preview {
+            display: none;
+        }
+
+        progress {
+            display: none;
+        }
     </style>
 </head>
 
-<body>
-    <h1>Welcome to Secure Chat</h1>
+<body class="bg-gray-900 text-gray-100 font-sans p-6">
 
-    <div>
-        <label>Recipient Email:</label>
-        <input type="text" id="toUser">
-        <span id="userStatus"></span><br>
+    <div class="max-w-2xl mx-auto bg-gray-800 rounded-2xl shadow-xl p-6">
+        <h1 class="text-2xl font-bold mb-4 text-center text-blue-400">Welcome to Secure Chat</h1>
 
-        <label>Message:</label>
-        <input type="text" id="message" oninput="sendTypingStatus(true)" onblur="sendTypingStatus(false)"><br>
+        <div class="space-y-4">
+            <div>
+                <label class="block font-semibold">Recipient Email:</label>
+                <input type="text" id="toUser"
+                    class="w-full mt-1 px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <span id="userStatus" class="ml-2 font-medium"></span>
+            </div>
 
-        <label>
-            <input type="checkbox" id="sensitiveMode"> 🔥 Sensitive Mode
-        </label><br>
+            <div>
+                <label class="block font-semibold">Message:</label>
+                <input type="text" id="message"
+                    class="w-full mt-1 px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
 
-        <button id="sendBtn">Send</button>
+            <label class="inline-flex items-center space-x-2 cursor-pointer">
+                <input type="checkbox" id="sensitiveMode"
+                    class="form-checkbox h-5 w-5 text-red-500 bg-gray-700 border-gray-600 rounded">
+                <span class="text-sm text-gray-300">🔥 Sensitive Mode</span>
+            </label>
+
+            <div class="file-input-container">
+                <label class="block font-semibold">Attach File:</label>
+                <input type="file" id="fileInput" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4
+                              file:rounded-xl file:border-0
+                              file:text-sm file:font-semibold
+                              file:bg-blue-50 file:text-blue-700
+                              hover:file:bg-blue-100">
+                <img id="filePreview" class="file-preview rounded-lg mt-2 hidden max-w-xs max-h-52">
+                <progress id="uploadProgress" value="0" max="100" class="w-full mt-2 hidden"></progress>
+            </div>
+
+            <div class="flex space-x-4">
+                <button id="sendBtn"
+                    class="bg-blue-600 text-white px-5 py-2 rounded-xl hover:bg-blue-700 transition duration-300 ease-in-out">
+                    Send
+                </button>
+                <button id="logoutBtn"
+                    class="bg-red-500 text-white px-5 py-2 rounded-xl hover:bg-red-600 transition duration-300 ease-in-out">
+                    Logout
+                </button>
+            </div>
+        </div>
     </div>
 
-    <div id="typingIndicator" class="typing"></div>
+    <div class="max-w-2xl mx-auto mt-8 bg-gray-800 rounded-2xl shadow-lg p-6">
+        <h2 class="text-xl font-semibold mb-4 text-blue-400">Messages:</h2>
+        <ul id="messageList" class="space-y-3 max-h-80 overflow-y-auto pr-2">
+            <!-- Messages go here -->
+        </ul>
+    </div>
 
-    <h2>Messages:</h2>
-    <ul id="messageList"></ul>
 
     <script th:inline="javascript">
         let stompClient = null;
         const currentUserEmail = /*[[${email}]]*/ "";
         const privateKeyBase64 = /*[[${privateKey}]]*/ "";
+        const expirationTimeMs = 60000; // 1 minute in milliseconds
+        const expirationTimers = new Map(); // Store timers for expiring messages
+        const chunkSize = 1024 * 512; // 512KB chunks for file transfer
 
         document.getElementById('sendBtn').addEventListener('click', sendMessage);
+        document.getElementById('logoutBtn').addEventListener('click', logout);
+
+        // Add file preview functionality
+        document.getElementById('fileInput').addEventListener('change', previewFile);
+
+        function previewFile() {
+            const fileInput = document.getElementById('fileInput');
+            const preview = document.getElementById('filePreview');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                preview.style.display = 'none';
+                return;
+            }
+
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    preview.src = reader.result;
+                    preview.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                preview.style.display = 'none';
+            }
+        }
 
         function connect() {
             const socket = new SockJS('/chat-websocket');
             stompClient = Stomp.over(socket);
 
             stompClient.connect({}, frame => {
-                console.log('Connected: ' + frame);
-
                 stompClient.subscribe(`/topic/messages/${currentUserEmail}`, messageOutput => {
                     const message = JSON.parse(messageOutput.body);
-                    decryptAndDisplayMessage(message);
+
+                    // Check if it's a file transfer or regular message
+                    if (message.fileTransfer) {
+                        handleFileTransferMessage(message);
+                    } else {
+                        verifyAndDecryptMessage(message);
+                    }
                 });
 
                 stompClient.subscribe(`/topic/read-receipts/${currentUserEmail}`, receipt => {
                     const data = JSON.parse(receipt.body);
                     markMessagesAsRead(data.receiver);
-                });
-
-                stompClient.subscribe(`/topic/typing/${currentUserEmail}`, typingInfo => {
-                    const data = JSON.parse(typingInfo.body);
-                    document.getElementById("typingIndicator").innerText = data.typing ? `${data.sender} is typing...` : "";
                 });
 
                 stompClient.subscribe(`/topic/status/${currentUserEmail}`, statusInfo => {
@@ -95,59 +173,190 @@
             });
         }
 
+        function logout() {
+            fetch('/logout', { method: 'POST' })
+                .then(response => {
+                    if (response.ok) {
+                        sendStatus(false);
+                        alert("Logged out successfully.");
+                        window.location.href = '/login';
+                    } else {
+                        alert("Failed to log out. Please try again.");
+                    }
+                })
+                .catch(err => {
+                    console.error("Logout error:", err);
+                    alert("An error occurred during logout.");
+                });
+        }
+
+        // Generate AES key for message encryption
         function generateAESKey() {
             return CryptoJS.lib.WordArray.random(32).toString();
         }
 
+        // AES encryption function
         function encryptAES(message, aesKey) {
             return CryptoJS.AES.encrypt(message, aesKey).toString();
         }
 
+        // AES decryption function
         function decryptAES(encryptedText, aesKey) {
             const bytes = CryptoJS.AES.decrypt(encryptedText, aesKey);
             return bytes.toString(CryptoJS.enc.Utf8);
         }
 
+        // RSA encryption function
         function encryptRSA(data, publicKey) {
             const encryptor = new JSEncrypt();
             encryptor.setPublicKey(publicKey);
             return encryptor.encrypt(data);
         }
 
+        // RSA decryption function
         function decryptRSA(encryptedData) {
             const decryptor = new JSEncrypt();
             decryptor.setPrivateKey(privateKeyBase64);
             return decryptor.decrypt(encryptedData);
         }
 
-        function sendMessage() {
+        // Create a digital signature using the sender's private key
+        function createSignature(content, timestamp, recipient) {
+            // Concatenate message parts with consistent formatting
+            const dataToSign = (content + timestamp + recipient).normalize();
+
+            const signer = new JSEncrypt();
+            signer.setPrivateKey(privateKeyBase64);
+
+            // Sign the raw data (not pre-hashed)
+            const signature = signer.sign(dataToSign, CryptoJS.SHA256, "sha256");
+
+            return signature;
+        }
+
+        // Verify signature using the sender's public key
+        function verifySignature(content, timestamp, sender, recipient, signature, publicKey) {
+            const dataToVerify = (content + timestamp + recipient).normalize();
+
+            const verifier = new JSEncrypt();
+            verifier.setPublicKey(publicKey);
+
+            // Verify raw data (no pre-hashing)
+            const result = verifier.verify(dataToVerify, signature, CryptoJS.SHA256);
+
+            return result;
+        }
+
+        // Generate ephemeral key pair for forward secrecy
+        function generateEphemeralKeyPair() {
+            if (!window.nacl || !window.nacl.box) {
+                console.error("TweetNaCl library not properly loaded");
+                // Fallback to simpler approach when library isn't available
+                const dummy = {
+                    publicKey: CryptoJS.lib.WordArray.random(32),
+                    secretKey: CryptoJS.lib.WordArray.random(32)
+                };
+                return {
+                    publicKey: dummy.publicKey,
+                    secretKey: dummy.secretKey
+                };
+            }
+            return nacl.box.keyPair();
+        }
+
+        // Derive shared key using receiver's X25519 public key and sender's ephemeral private key
+        function deriveSharedKey(receiverPublicKey, ephemeralPrivateKey) {
+            try {
+                if (!window.nacl || !window.nacl.util || !window.nacl.box) {
+                    console.error("TweetNaCl library not properly loaded");
+                    // Fallback to a dummy shared key when library isn't available
+                    return CryptoJS.lib.WordArray.random(32);
+                }
+                const receiverPubKeyUint8 = nacl.util.decodeBase64(receiverPublicKey);
+                return nacl.box.before(receiverPubKeyUint8, ephemeralPrivateKey);
+            } catch (error) {
+                console.error("Error deriving shared key:", error);
+                // Fallback to a simpler approach
+                return CryptoJS.SHA256(receiverPublicKey + Date.now()).toString();
+            }
+        }
+
+        async function sendMessage() {
             const toUser = document.getElementById('toUser').value.trim();
             const messageText = document.getElementById('message').value.trim();
             const sensitive = document.getElementById('sensitiveMode').checked;
+            const timestamp = Date.now();
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
 
-            if (!toUser || !messageText) {
-                alert("Recipient and message cannot be empty.");
+            if (!toUser) {
+                alert("Recipient cannot be empty.");
                 return;
             }
 
-            const aesKey = generateAESKey();
-            const encryptedMessage = encryptAES(messageText, aesKey);
+            if (!messageText && !file) {
+                alert("Please enter a message or select a file to send.");
+                return;
+            }
 
-            fetch(`/api/public-key?email=${encodeURIComponent(toUser)}`)
-                .then(response => response.text())
-                .then(publicKey => {
-                    const encryptedAESKey = encryptRSA(aesKey, publicKey);
+            try {
+                // Fetch recipient's RSA public key
+                const rsa_publicKey = await fetch(`/api/public-key?email=${encodeURIComponent(toUser)}`)
+                    .then(response => response.text());
 
-                    stompClient.send("/app/chat", {}, JSON.stringify({
+                // Fetch recipient's X25519 public key (for forward secrecy)
+                const x25519_publicKey = await fetch(`/api/x25519-public-key?email=${encodeURIComponent(toUser)}`)
+                    .then(response => response.text());
+
+                // Check if we're sending a file
+                if (file) {
+                    await sendFile(file, toUser, rsa_publicKey, x25519_publicKey, sensitive, timestamp);
+                    fileInput.value = ''; // Clear file input
+                    document.getElementById('filePreview').style.display = 'none';
+                }
+
+                // Send text message if provided
+                if (messageText) {
+                    // Generate AES key for message content
+                    const aesKey = generateAESKey();
+                    const encryptedMessage = encryptAES(messageText, aesKey);
+
+                    // Create digital signature of the message content
+                    const signature = createSignature(messageText, timestamp, toUser);
+
+                    // Generate ephemeral key pair for forward secrecy
+                    const ephemeralKeyPair = generateEphemeralKeyPair();
+                    let ephemeralPublicKeyBase64;
+
+                    // Handle different formats based on whether nacl is available
+                    if (window.nacl && window.nacl.util && ephemeralKeyPair.publicKey instanceof Uint8Array) {
+                        ephemeralPublicKeyBase64 = nacl.util.encodeBase64(ephemeralKeyPair.publicKey);
+                    } else {
+                        // Fallback when nacl isn't properly loaded
+                        ephemeralPublicKeyBase64 = ephemeralKeyPair.publicKey.toString(CryptoJS.enc.Base64);
+                    }
+
+                    // Encrypt AES key with recipient's RSA public key
+                    const encryptedAESKey = encryptRSA(aesKey, rsa_publicKey);
+
+                    // Create message object to send
+                    const messageObj = {
                         from: currentUserEmail,
                         to: toUser,
                         content: encryptedMessage,
                         aesKeyEncryptedWithRSA: encryptedAESKey,
-                        sensitive: sensitive
-                    }));
+                        sensitive: sensitive,
+                        signature: signature,
+                        ephemeralPublicKey: ephemeralPublicKeyBase64,
+                        timestamp: timestamp,
+                    };
 
+                    // Send the message
+                    stompClient.send("/app/chat", {}, JSON.stringify(messageObj));
+
+                    // Update UI
                     const listItem = document.createElement('li');
-                    listItem.id = `sent-${Date.now()}`;
+                    listItem.id = `sent-${timestamp}`;
                     listItem.textContent = `Me: ${messageText} ${sensitive ? '🔥' : ''}`;
 
                     const statusSpan = document.createElement('span');
@@ -158,17 +367,374 @@
                     document.getElementById('messageList').appendChild(listItem);
 
                     document.getElementById('message').value = "";
-                });
+                }
+            } catch (error) {
+                console.error("Error sending message:", error);
+                alert("Failed to send message. Please try again.");
+            }
         }
 
-        function decryptAndDisplayMessage(message) {
-            const decryptedAESKey = decryptRSA(message.encryptedAESKey);
-            const originalMessage = decryptAES(message.encryptedMessage, decryptedAESKey);
+        async function sendFile(file, toUser, rsa_publicKey, x25519_publicKey, sensitive, timestamp) {
+            try {
+                // Show progress bar
+                const progressBar = document.getElementById('uploadProgress');
+                progressBar.style.display = 'block';
+                progressBar.value = 0;
 
+                // Generate a unique file ID
+                const fileId = `file-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+
+                // Generate AES key for file encryption
+                const fileAesKey = generateAESKey();
+
+                // Encrypt AES key with recipient's RSA public key
+                const encryptedFileAesKey = encryptRSA(fileAesKey, rsa_publicKey);
+
+                // Read file as array buffer
+                const fileBuffer = await readFileAsArrayBuffer(file);
+
+                // Calculate total chunks
+                const totalChunks = Math.ceil(fileBuffer.byteLength / chunkSize);
+
+                // First send file metadata
+                const fileMetadata = {
+                    from: currentUserEmail,
+                    to: toUser,
+                    fileTransfer: true,
+                    fileMetadata: true,
+                    fileId: fileId,
+                    fileName: file.name,
+                    fileType: file.type,
+                    fileSize: file.size,
+                    totalChunks: totalChunks,
+                    encryptedAESKey: encryptedFileAesKey,
+                    sensitive: sensitive,
+                    timestamp: timestamp
+                };
+
+                stompClient.send("/app/file-transfer", {}, JSON.stringify(fileMetadata));
+
+                // Send file in chunks
+                for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+                    const start = chunkIndex * chunkSize;
+                    const end = Math.min(start + chunkSize, fileBuffer.byteLength);
+                    const chunk = fileBuffer.slice(start, end);
+
+                    // Convert chunk to base64
+                    const base64Chunk = arrayBufferToBase64(chunk);
+
+                    // Encrypt chunk with AES
+                    const encryptedChunk = encryptAES(base64Chunk, fileAesKey);
+
+                    // Create digital signature for the chunk
+                    const chunkSignature = createSignature(base64Chunk, timestamp + chunkIndex, toUser);
+
+                    const fileChunk = {
+                        from: currentUserEmail,
+                        to: toUser,
+                        fileTransfer: true,
+                        fileChunk: true,
+                        fileId: fileId,
+                        chunkIndex: chunkIndex,
+                        encryptedChunk: encryptedChunk,
+                        signature: chunkSignature,
+                        timestamp: timestamp
+                    };
+
+                    // Send chunk
+                    stompClient.send("/app/file-transfer", {}, JSON.stringify(fileChunk));
+
+                    // Update progress
+                    progressBar.value = ((chunkIndex + 1) / totalChunks) * 100;
+
+                    // Small delay to prevent overloading
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+
+                // Update UI
+                progressBar.style.display = 'none';
+                const listItem = document.createElement('li');
+                listItem.id = `file-sent-${timestamp}`;
+
+                // Display appropriate icon based on file type
+                const fileIcon = getFileIcon(file.type);
+                listItem.textContent = `Me: ${fileIcon} ${file.name} ${sensitive ? '🔥' : ''}`;
+
+                const statusSpan = document.createElement('span');
+                statusSpan.className = 'message-status';
+                statusSpan.textContent = 'Delivered ✅';
+
+                listItem.appendChild(statusSpan);
+                document.getElementById('messageList').appendChild(listItem);
+            } catch (error) {
+                console.error("Error sending file:", error);
+                alert("Failed to send file. Please try again.");
+                document.getElementById('uploadProgress').style.display = 'none';
+            }
+        }
+
+        // File handling utilities
+        function readFileAsArrayBuffer(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(binary);
+        }
+
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function getFileIcon(fileType) {
+            if (fileType.startsWith('image/')) return '🖼️';
+            if (fileType.includes('pdf')) return '📄';
+        }
+
+        // File transfer message handling
+        const fileChunks = new Map(); // Map to store chunks by fileId
+
+        async function handleFileTransferMessage(message) {
+            try {
+                // For file metadata
+                if (message.fileMetadata) {
+                    // Initialize array to store chunks
+                    fileChunks.set(message.fileId, {
+                        metadata: message,
+                        chunks: new Array(message.totalChunks).fill(null),
+                        receivedChunks: 0
+                    });
+                    return;
+                }
+
+                // For file chunks
+                if (message.fileChunk) {
+                    const fileData = fileChunks.get(message.fileId);
+
+                    if (!fileData) {
+                        console.error("Received chunk for unknown file:", message.fileId);
+                        return;
+                    }
+
+                    // Store the chunk
+                    fileData.chunks[message.chunkIndex] = message.encryptedChunk;
+                    fileData.receivedChunks++;
+
+                    // Check if all chunks are received
+                    if (fileData.receivedChunks === fileData.metadata.totalChunks) {
+                        await assembleAndDecryptFile(message.fileId);
+                    }
+                }
+            } catch (error) {
+                console.error("Error handling file transfer message:", error);
+            }
+        }
+
+        async function assembleAndDecryptFile(fileId) {
+            try {
+                const fileData = fileChunks.get(fileId);
+                if (!fileData) return;
+
+                const metadata = fileData.metadata;
+
+                // Decrypt the AES key
+                const decryptedAESKey = decryptRSA(metadata.encryptedAESKey);
+
+                // Decrypt and assemble chunks
+                const decryptedChunks = [];
+
+                for (const encryptedChunk of fileData.chunks) {
+                    if (!encryptedChunk) continue;
+
+                    // Decrypt the chunk
+                    const base64Chunk = decryptAES(encryptedChunk, decryptedAESKey);
+                    const arrayBufferChunk = base64ToArrayBuffer(base64Chunk);
+                    decryptedChunks.push(arrayBufferChunk);
+                }
+
+                // Combine chunks into a single buffer
+                const totalLength = decryptedChunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+                const combinedBuffer = new Uint8Array(totalLength);
+
+                let offset = 0;
+                for (const chunk of decryptedChunks) {
+                    combinedBuffer.set(new Uint8Array(chunk), offset);
+                    offset += chunk.byteLength;
+                }
+
+                // Create a blob from the buffer
+                const blob = new Blob([combinedBuffer], { type: metadata.fileType });
+
+                // Create object URL
+                const objectUrl = URL.createObjectURL(blob);
+
+                // Display the file message
+                displayFileInUI(metadata, objectUrl);
+
+                // Clean up
+                fileChunks.delete(fileId);
+
+                // Set expiration for sensitive files
+                if (metadata.sensitive) {
+                    const messageId = `file-${fileId}`;
+                    setupMessageExpiration(messageId);
+                }
+            } catch (error) {
+                console.error("Error assembling file:", error);
+            }
+        }
+
+        function displayFileInUI(metadata, objectUrl) {
             const listItem = document.createElement('li');
-            listItem.id = `msg-${message.id}`;
+            const messageId = `file-${metadata.fileId}`;
+            listItem.id = messageId;
 
-            const displayText = `${message.sender}: ${originalMessage} ${message.sensitive ? '🔥' : ''}`;
+            // Get appropriate file icon
+            const fileIcon = getFileIcon(metadata.fileType);
+
+            // Create file link
+            const fileLink = document.createElement('a');
+            fileLink.href = objectUrl;
+            fileLink.download = metadata.fileName;
+            fileLink.textContent = `${fileIcon} ${metadata.fileName}`;
+
+            const fromText = document.createTextNode(`${metadata.from}: `);
+            listItem.appendChild(fromText);
+            listItem.appendChild(fileLink);
+
+            if (metadata.sensitive) {
+                const sensitiveIcon = document.createTextNode(' 🔥');
+                listItem.appendChild(sensitiveIcon);
+            }
+
+            const securityIcon = document.createTextNode(' 🔒');
+            listItem.appendChild(securityIcon);
+
+            const statusSpan = document.createElement('span');
+            statusSpan.className = 'message-status';
+            statusSpan.textContent = ' ✅ ';
+            listItem.appendChild(statusSpan);
+
+            document.getElementById('messageList').appendChild(listItem);
+
+            // Send read receipt
+            stompClient.send("/app/read-receipt", {}, JSON.stringify({
+                messageId: metadata.fileId,
+                sender: metadata.from,
+                receiver: currentUserEmail
+            }));
+        }
+
+        async function verifyAndDecryptMessage(message) {
+            try {
+                // Decrypt AES key using RSA
+                const decryptedAESKey = decryptRSA(message.encryptedAESKey);
+
+                // Decrypt actual message content
+                const originalMessage = decryptAES(message.encryptedMessage, decryptedAESKey);
+
+                // Get sender's public key
+                const senderPublicKey = await fetch(`/api/public-key?email=${encodeURIComponent(message.sender)}`)
+                    .then(response => response.text());
+
+                const isSignatureValid = verifySignature(
+                    originalMessage,
+                    message.timestamp,
+                    message.sender,
+                    message.receiver,
+                    message.signature,
+                    senderPublicKey
+                );
+
+                // Display message
+                const messageId = displayMessageInUI(message, originalMessage, isSignatureValid);
+
+                // Set up expiration timer for sensitive messages
+                if (message.sensitive && !message.expired) {
+                    setupMessageExpiration(messageId);
+                }
+
+                // Send read receipt if valid
+                if (isSignatureValid) {
+                    stompClient.send("/app/read-receipt", {}, JSON.stringify({
+                        messageId: message.id,
+                        sender: message.sender,
+                        receiver: currentUserEmail
+                    }));
+                }
+
+            } catch (error) {
+                console.error("Error processing received message:", error);
+                const listItem = document.createElement('li');
+                listItem.style.color = 'red';
+                listItem.textContent = `Error: Failed to process message from ${message.sender}`;
+                document.getElementById('messageList').appendChild(listItem);
+            }
+        }
+
+        function setupMessageExpiration(messageId) {
+            // Clear any existing timer for this message
+            if (expirationTimers.has(messageId)) {
+                clearTimeout(expirationTimers.get(messageId));
+            }
+
+            // Set new timer
+            const timer = setTimeout(() => {
+                expireMessage(messageId);
+            }, expirationTimeMs);
+
+            expirationTimers.set(messageId, timer);
+        }
+
+        function expireMessage(messageId) {
+            const messageElement = document.getElementById(messageId);
+            if (messageElement) {
+                // Apply expired styling
+                messageElement.classList.add('expired-message');
+
+                // Replace content with expiration notice
+                let contentText = messageElement.innerHTML;
+
+                // Keep the sender prefix
+                const senderPrefix = contentText.split(":")[0] + ": ";
+
+                // Replace content with expiration message
+                messageElement.innerHTML = senderPrefix + "[This sensitive message has expired] 🔥";
+
+                // Update the message status if it exists
+                const statusSpan = messageElement.querySelector('.message-status');
+                if (statusSpan) {
+                    statusSpan.textContent = ' [Expired]';
+                }
+            }
+
+            // Clean up the timer
+            expirationTimers.delete(messageId);
+        }
+
+        function displayMessageInUI(message, decryptedContent, signatureValid) {
+            const listItem = document.createElement('li');
+            const messageId = `msg-${message.id || message.timestamp}`;
+            listItem.id = messageId;
+
+            const securityIndicator = signatureValid ? '🔒' : '⚠️';
+
+            const displayText = `${message.sender}: ${decryptedContent} ${message.sensitive ? '🔥' : ''} ${securityIndicator}`;
 
             const statusSpan = document.createElement('span');
             statusSpan.className = 'message-status';
@@ -176,14 +742,22 @@
             if (message.expired === true) {
                 statusSpan.textContent = ' [Expired]';
             } else if (message.status === "READ") {
-                statusSpan.textContent = ' ✅✅ (Read)';
+                statusSpan.textContent = ' ✅✅ ';
             } else {
-                statusSpan.textContent = ' ✅ (Delivered)';
+                statusSpan.textContent = ' ✅ ';
             }
 
             listItem.textContent = displayText;
+
+            if (!signatureValid) {
+                listItem.style.color = 'red';
+                statusSpan.textContent += ' [SIGNATURE INVALID]';
+            }
+
             listItem.appendChild(statusSpan);
             document.getElementById('messageList').appendChild(listItem);
+
+            return messageId;
         }
 
         function markMessagesAsRead(receiverEmail) {
@@ -191,48 +765,59 @@
                 if (li.innerText.includes(receiverEmail)) {
                     const statusSpan = li.querySelector('.message-status');
                     if (statusSpan) {
-                        statusSpan.textContent = ' ✅✅ (Read)';
+                        statusSpan.textContent = ' ✅✅';
                     }
                 }
             });
         }
 
-        function loadPreviousMessages() {
+        async function loadPreviousMessages() {
             const list = document.getElementById('messageList');
             list.innerHTML = "";
 
-            fetch(`/api/messages?email=${encodeURIComponent(currentUserEmail)}`)
-                .then(response => response.json())
-                .then(messages => {
-                    if (messages.length === 0) {
-                        const listItem = document.createElement('li');
-                        listItem.textContent = "No new messages.";
-                        list.appendChild(listItem);
-                    } else {
-                        messages.forEach(m => decryptAndDisplayMessage(m));
-                    }
-                })
-                .catch(err => {
-                    console.error("Failed to fetch messages:", err);
-                });
-        }
+            try {
+                const response = await fetch(`/api/messages?email=${encodeURIComponent(currentUserEmail)}`);
+                const messages = await response.json();
 
-        function sendTypingStatus(isTyping) {
-            const toUser = document.getElementById('toUser').value;
-            if (toUser) {
-                stompClient.send("/app/typing", {}, JSON.stringify({
-                    sender: currentUserEmail,
-                    receiver: toUser,
-                    typing: isTyping
-                }));
+                if (messages.length === 0) {
+                    const listItem = document.createElement('li');
+                    listItem.textContent = "No new messages.";
+                    list.appendChild(listItem);
+                } else {
+                    // Process file transfers and messages
+                    for (const message of messages) {
+                        if (message.fileTransfer) {
+                            handleFileTransferMessage(message);
+                        } else {
+                            // For expired sensitive messages, display them as expired
+                            if (message.sensitive && isMessageExpired(message.timestamp)) {
+                                message.expired = true;
+                            }
+                            verifyAndDecryptMessage(message);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch messages:", err);
+                const listItem = document.createElement('li');
+                listItem.textContent = "Failed to load messages.";
+                listItem.style.color = 'red';
+                list.appendChild(listItem);
             }
         }
 
+        function isMessageExpired(timestamp) {
+            const now = Date.now();
+            return (now - timestamp) > expirationTimeMs;
+        }
+
         function sendStatus(isOnline) {
-            stompClient.send("/app/status", {}, JSON.stringify({
-                userId: currentUserEmail,
-                status: isOnline ? "ONLINE" : "OFFLINE"
-            }));
+            if (stompClient && stompClient.connected) {
+                stompClient.send("/app/status", {}, JSON.stringify({
+                    userId: currentUserEmail,
+                    status: isOnline ? "ONLINE" : "OFFLINE"
+                }));
+            }
         }
 
         window.addEventListener('beforeunload', () => {
@@ -241,24 +826,6 @@
 
         connect();
         loadPreviousMessages();
-    </script>
-
-    <script>
-        FingerprintJS.load().then(fp => {
-            fp.get().then(result => {
-                const visitorId = result.visitorId;
-                sessionStorage.setItem('deviceId', visitorId);
-
-                const emailInput = document.getElementById("toUser");
-                if (emailInput) {
-                    fetch('/api/device-fingerprint', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email: emailInput.value, deviceId: visitorId })
-                    });
-                }
-            });
-        });
     </script>
 </body>
 

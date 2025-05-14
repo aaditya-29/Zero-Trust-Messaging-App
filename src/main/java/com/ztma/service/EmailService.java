@@ -17,7 +17,7 @@ public class EmailService {
         msg.setTo(to);
         msg.setSubject("ZTMA Email Verification Code");
         msg.setText("Your verification code is: " + code);
-//        mailSender.send(msg);
+        mailSender.send(msg);
         System.out.println("Verification email sent to " + to + " with code: " + code);  // Added logging
     }
 
@@ -28,6 +28,6 @@ public class EmailService {
         msg.setSubject(subject);
         msg.setText(text);
         System.out.println("OTP email sent to " + to + ": " + text);  // Added logging for OTP email
-//        mailSender.send(msg);
+        mailSender.send(msg);
     }
 }
