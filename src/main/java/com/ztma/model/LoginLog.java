@@ -2,9 +2,9 @@ package com.ztma.model;
 
 import java.util.Date;
 
+import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import jakarta.persistence.Id;
 
 @Document(collection = "login_logs")
 public class LoginLog {
