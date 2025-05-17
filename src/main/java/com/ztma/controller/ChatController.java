@@ -93,7 +93,7 @@ public class ChatController {
 		activity.setTimestamp(new Date());
 		userActivityLogRepository.save(activity);
 
-		// 📣 Detect spam-like behavior (> 10 messages in 60s)
+		// 📣 Detect spam-like behavior (> 5 messages in 60s)
 		long cutoff = System.currentTimeMillis() - 60_000;
 		List<MessageLog> recent = messageLogRepository.findBySenderAndTimestampAfter(message.getFrom(), cutoff);
 		if (recent.size() > 5) {
