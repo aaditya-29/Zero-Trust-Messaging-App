@@ -50,7 +50,7 @@ A secure, real-time chat and file transfer application built with Spring Boot, W
 1. **Clone the repository**
 
    ```sh
-   git clone <your-repo-url>
+   git clone https://github.com/aaditya-29/Zero-Trust-Messaging-App.git
    cd ztma
    ```
 
